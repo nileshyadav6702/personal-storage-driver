@@ -34,7 +34,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [showMobileSearch, setShowMobileSearch] = useState(false)
   const fileInputRef = useRef(null)
-  const url = "http://localhost:5000/"
+  const url = "http://3.87.94.244:5000/"
 
   const [user, setUser] = useState(null)
   const [showProfileDropdown, setShowProfileDropdown] = useState(false)
@@ -792,8 +792,8 @@ export default function App() {
         {/* Upload Section */}
         <section
           className={`mb-6 sm:mb-8 p-4 sm:p-8 border-2 border-dashed rounded-2xl transition-all duration-300 ${isDragging
-              ? "border-blue-400 bg-gradient-to-br from-blue-50 to-indigo-50 scale-[1.02] shadow-lg"
-              : "border-slate-300 hover:border-slate-400 bg-white/50 backdrop-blur-sm"
+            ? "border-blue-400 bg-gradient-to-br from-blue-50 to-indigo-50 scale-[1.02] shadow-lg"
+            : "border-slate-300 hover:border-slate-400 bg-white/50 backdrop-blur-sm"
             }`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}

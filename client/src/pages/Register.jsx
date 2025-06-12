@@ -6,7 +6,7 @@ import { Eye, EyeOff, Mail, Lock, User, UserPlus, LogIn, AlertCircle, CheckCircl
 
 function Register() {
     const navigate = useNavigate()
-    const url = "http://localhost:5000/"
+    const url = "http://3.87.94.244:5000/"
     const [form, setForm] = useState({
         name: "",
         email: "",
@@ -229,10 +229,10 @@ function Register() {
                                     type={showConfirmPassword ? "text" : "password"}
                                     name="confirmPassword"
                                     className={`block w-full pl-10 pr-10 py-3 border rounded-lg focus:ring-2 transition-all duration-200 bg-gray-50 text-gray-900 placeholder-gray-500 ${form.confirmPassword && form.password !== form.confirmPassword
-                                            ? "border-red-300 focus:ring-red-500 focus:border-red-500"
-                                            : form.confirmPassword && form.password === form.confirmPassword
-                                                ? "border-green-300 focus:ring-green-500 focus:border-green-500"
-                                                : "border-gray-300 focus:ring-purple-500 focus:border-purple-500"
+                                        ? "border-red-300 focus:ring-red-500 focus:border-red-500"
+                                        : form.confirmPassword && form.password === form.confirmPassword
+                                            ? "border-green-300 focus:ring-green-500 focus:border-green-500"
+                                            : "border-gray-300 focus:ring-purple-500 focus:border-purple-500"
                                         }`}
                                     placeholder="••••••••"
                                     value={form.confirmPassword}

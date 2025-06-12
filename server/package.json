@@ -1,0 +1,21 @@
+{
+  "name": "creating-personal-driver",
+  "version": "1.0.0",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "mime-types": "^2.1.33",
+    "multer": "^2.0.1",
+    "uuid": "^11.1.0"
+  }
+}

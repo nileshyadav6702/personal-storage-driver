@@ -6,7 +6,7 @@ import { Eye, EyeOff, Mail, Lock, User, UserPlus, LogIn, AlertCircle, CheckCircl
 
 function Register() {
     const navigate = useNavigate()
-    const url = "http://3.87.94.244:5000/"
+    const url = "http://13.204.45.168:5000/"
     const [form, setForm] = useState({
         name: "",
         email: "",

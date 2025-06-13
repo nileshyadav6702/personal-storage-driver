@@ -34,7 +34,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [showMobileSearch, setShowMobileSearch] = useState(false)
   const fileInputRef = useRef(null)
-  const url = "https://fc79-13-204-45-168.ngrok-free.app/"
+  const url = "https://personal-storage-driver.onrender.com/"
 
   const [user, setUser] = useState(null)
   const [showProfileDropdown, setShowProfileDropdown] = useState(false)

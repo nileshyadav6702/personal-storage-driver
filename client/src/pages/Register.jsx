@@ -6,7 +6,7 @@ import { Eye, EyeOff, Mail, Lock, User, UserPlus, LogIn, AlertCircle, CheckCircl
 
 function Register() {
     const navigate = useNavigate()
-    const url = "https://fc79-13-204-45-168.ngrok-free.app/"
+    const url = "https://personal-storage-driver.onrender.com/"
     const [form, setForm] = useState({
         name: "",
         email: "",

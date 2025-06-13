@@ -5,7 +5,7 @@ import { Link, useNavigate } from "react-router-dom"
 import { Eye, EyeOff, Mail, Lock, LogIn, UserPlus, AlertCircle } from "lucide-react"
 
 function Login() {
-    const url = "http://13.204.45.168:5000/"
+    const url = "https://fc79-13-204-45-168.ngrok-free.app/"
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
     const [error, setError] = useState("")

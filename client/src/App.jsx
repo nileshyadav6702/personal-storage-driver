@@ -34,7 +34,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [showMobileSearch, setShowMobileSearch] = useState(false)
   const fileInputRef = useRef(null)
-  const url = "http://13.204.45.168:5000/"
+  const url = "https://fc79-13-204-45-168.ngrok-free.app/"
 
   const [user, setUser] = useState(null)
   const [showProfileDropdown, setShowProfileDropdown] = useState(false)

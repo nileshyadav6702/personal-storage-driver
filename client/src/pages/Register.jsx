@@ -6,7 +6,7 @@ import { Eye, EyeOff, Mail, Lock, User, UserPlus, LogIn, AlertCircle, CheckCircl
 
 function Register() {
     const navigate = useNavigate()
-    const url = "http://13.204.45.168:5000/"
+    const url = "https://fc79-13-204-45-168.ngrok-free.app/"
     const [form, setForm] = useState({
         name: "",
         email: "",

@@ -5,7 +5,7 @@ import { Link, useNavigate } from "react-router-dom"
 import { Eye, EyeOff, Mail, Lock, LogIn, UserPlus, AlertCircle } from "lucide-react"
 
 function Login() {
-    const url = "https://personal-storage-driver.onrender.com/"
+    const url = "http://localhost:5000/"
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
     const [error, setError] = useState("")
@@ -32,12 +32,11 @@ function Login() {
                 credentials: 'include',
             })
             const data = await response.json()
-
-            if (data.msg !== "User loged in Successfully") {
-                setError(data.msg)
+            console.log(data)
+            if (data.msg == "User logged in successfully") {
+                navigate("/"+data.user.rootDirId)
             } else {
-                // localStorage.setItem("id", data.id)
-                navigate("/")
+                setError(data.msg)
             }
         } catch (err) {
             console.log(err)

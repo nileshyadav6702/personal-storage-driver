@@ -1,6 +1,4 @@
 import express from "express";
-import { folders, users } from "../readDB.js";
-import { writeFolders, writeUsers } from "../writeDB.js";
 import { v4 as uuidv4 } from 'uuid';
 
 const userRouter = express.Router();
@@ -49,6 +47,10 @@ const safeDBOperation = async (operation, maxRetries = 3) => {
 
 userRouter.post("/register", asyncHandler(async (req, res) => {
     try {
+        //db
+        let db = req.db;
+        let users = db.collection("users")
+        let folders = db.collection("folders")
         // Input validation
         const { name, email, password } = req.body;
 
@@ -83,18 +85,12 @@ userRouter.post("/register", asyncHandler(async (req, res) => {
             });
         }
 
-        // Check if arrays exist and are valid
-        if (!Array.isArray(users) || !Array.isArray(folders)) {
-            console.error('Database arrays are not initialized properly');
-            return res.status(500).json({
-                msg: "Server configuration error. Please try again later."
-            });
-        }
 
         // Check for existing user (case-insensitive)
-        const existingUser = users.find(user =>
-            user && user.email && user.email.toLowerCase() === sanitizedEmail
-        );
+        // const existingUser = users.find(user =>
+        //     user && user.email && user.email.toLowerCase() === sanitizedEmail
+        // );
+        const existingUser = await  users.findOne({ email: sanitizedEmail});
 
         if (existingUser) {
             return res.status(409).json({
@@ -115,7 +111,7 @@ userRouter.post("/register", asyncHandler(async (req, res) => {
         }
 
         // Create folder and user objects
-        const newFolder = {
+        await folders.insertOne({
             name: "root",
             dirID: rootDirId,
             parentDir: null,
@@ -125,9 +121,9 @@ userRouter.post("/register", asyncHandler(async (req, res) => {
             },
             createdAt: new Date().toISOString(),
             userId: userId
-        };
+        })
 
-        const newUser = {
+        let newUser = await users.insertOne({
             id: userId,
             name: sanitizedName,
             email: sanitizedEmail,
@@ -135,26 +131,7 @@ userRouter.post("/register", asyncHandler(async (req, res) => {
             rootDirId,
             createdAt: new Date().toISOString(),
             lastLogin: null
-        };
-
-        // Safely add to arrays
-        try {
-            folders.push(newFolder);
-            users.push(newUser);
-        } catch (error) {
-            console.error('Failed to add to arrays:', error);
-            return res.status(500).json({
-                msg: "Failed to create user data structures"
-            });
-        }
-
-        // Safe database write operations
-        await safeDBOperation(async () => {
-            await Promise.all([
-                writeUsers(users),
-                writeFolders(folders)
-            ]);
-        });
+        })
 
         // Set secure cookie
         try {
@@ -175,25 +152,12 @@ userRouter.post("/register", asyncHandler(async (req, res) => {
             user: {
                 id: userId,
                 name: sanitizedName,
-                email: sanitizedEmail,
-                createdAt: newUser.createdAt
+                email: sanitizedEmail
             }
         });
 
     } catch (error) {
         console.error('Registration error:', error);
-
-        // Clean up on failure (remove partially created data)
-        try {
-            const userIndex = users.findIndex(u => u && u.email === req.body?.email?.toLowerCase());
-            const folderIndex = folders.findIndex(f => f && f.name === "root" && f.userId === req.body?.userId);
-
-            if (userIndex > -1) users.splice(userIndex, 1);
-            if (folderIndex > -1) folders.splice(folderIndex, 1);
-        } catch (cleanupError) {
-            console.error('Cleanup failed:', cleanupError);
-        }
-
         return res.status(500).json({
             msg: "Registration failed. Please try again later.",
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -203,6 +167,8 @@ userRouter.post("/register", asyncHandler(async (req, res) => {
 
 userRouter.post("/login", asyncHandler(async (req, res) => {
     try {
+        let db = req.db;
+        let users = db.collection("users")
         const { email, password } = req.body;
 
         // Input validation
@@ -223,19 +189,7 @@ userRouter.post("/login", asyncHandler(async (req, res) => {
             });
         }
 
-        // Check if users array exists
-        if (!Array.isArray(users)) {
-            console.error('Users array is not initialized');
-            return res.status(500).json({
-                msg: "Server configuration error"
-            });
-        }
-
-        // Find user safely
-        const user = users.find(u =>
-            u && u.email && u.email.toLowerCase() === sanitizedEmail
-        );
-
+        const user = await users.findOne({ email: sanitizedEmail });
         if (!user) {
             return res.status(404).json({
                 msg: "User with this email does not exist. Please register first."
@@ -251,10 +205,8 @@ userRouter.post("/login", asyncHandler(async (req, res) => {
 
         // Update last login
         try {
-            user.lastLogin = new Date().toISOString();
-            await safeDBOperation(async () => {
-                await writeUsers(users);
-            });
+            await users.updateOne({ id: user.id },{$set: {lastLogin: new Date().toISOString()}})
+
         } catch (error) {
             console.error('Failed to update last login:', error);
             // Don't fail login for this
@@ -282,7 +234,8 @@ userRouter.post("/login", asyncHandler(async (req, res) => {
                 id: user.id,
                 name: user.name,
                 email: user.email,
-                lastLogin: user.lastLogin
+                lastLogin: user.lastLogin,
+                rootDirId: user.rootDirId
             }
         });
 
@@ -297,6 +250,8 @@ userRouter.post("/login", asyncHandler(async (req, res) => {
 
 userRouter.get("/profile", asyncHandler(async (req, res) => {
     try {
+        let db = req.db;
+        let users = await db.collection("users")
         // Check for user ID in cookies
         const { id: userId } = req.cookies || {};
 
@@ -314,16 +269,8 @@ userRouter.get("/profile", asyncHandler(async (req, res) => {
             });
         }
 
-        // Check if users array exists
-        if (!Array.isArray(users)) {
-            console.error('Users array is not initialized');
-            return res.status(500).json({
-                msg: "Server configuration error"
-            });
-        }
-
         // Find user safely
-        const user = users.find(u => u && u.id === userId);
+        const user = await users.findOne({ id: userId });
 
         if (!user) {
             // Clear invalid cookie

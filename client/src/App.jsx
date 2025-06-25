@@ -19,13 +19,14 @@ import {
   LogOut,
   Settings,
 } from "lucide-react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate , useParams} from "react-router-dom"
 
 export default function App() {
   const navigate = useNavigate()
+  const { dirId } = useParams();
   const [currentPath, setCurrentPath] = useState("/")
   const [files, setFiles] = useState([])
-  const [expandedFolders, setExpandedFolders] = useState({})
+  // const [expandedFolders, setExpandedFolders] = useState({})
   const [selectedFile, setSelectedFile] = useState(null)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [error, setError] = useState(null)
@@ -34,7 +35,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [showMobileSearch, setShowMobileSearch] = useState(false)
   const fileInputRef = useRef(null)
-  const url = "https://personal-storage-driver.onrender.com/"
+  const url = "http://localhost:5000/"
 
   const [user, setUser] = useState(null)
   const [showProfileDropdown, setShowProfileDropdown] = useState(false)
@@ -54,18 +55,20 @@ export default function App() {
   const fetchFiles = useCallback(async () => {
     setIsLoading(true)
     try {
-      const response = await fetch(`${url}directory`, {
+      const response = await fetch(`${url}directory/${dirId ?? 'root'}`, {
         credentials: "include", // This is essential
       })
       const data = await response.json()
       console.log(data)
       if (!response.ok) {
         setTimeout(() => {
-          navigate("/login")
+          // navigate("/login")
+          setFiles([])
+          setError("sign in")
         }, 1000)
       }
-      setCurrentPath(data.files[0].dirID)
-      setFiles(data.files)
+      // setCurrentPath(data.files[0].dirID)
+      setFiles(data.data)
       setError(null)
     } catch (err) {
       setError("Failed to load files. Please try again.")
@@ -108,13 +111,6 @@ export default function App() {
     fetchUserProfile()
   }, [fetchFiles, fetchUserProfile])
 
-  const toggleFolder = (folderPath) => {
-    setExpandedFolders((prev) => ({
-      ...prev,
-      [folderPath]: !prev[folderPath],
-    }))
-  }
-
   const handleFileChange = (e) => {
     setSelectedFile(e.target.files[0])
   }
@@ -132,7 +128,7 @@ export default function App() {
       const xhr = new XMLHttpRequest()
       xhr.open("POST", `${url}file/upload`, true)
       xhr.responseType = "json"
-      xhr.setRequestHeader("parentDir", currentPath)
+      xhr.setRequestHeader("parentDir", dirId)
       xhr.setRequestHeader("size", selectedFile.size)
 
       xhr.upload.addEventListener("progress", (e) => {
@@ -395,12 +391,10 @@ export default function App() {
 
   const renderFiles = (files, parentPath = "", depth = 0) => {
     const filtered = filteredFiles(files)
-
     return (
       <div className={`${depth > 0 ? "ml-3 sm:ml-6 border-l border-slate-200 pl-2 sm:pl-4" : ""}`}>
-        {filtered.map((file, index) => {
+        {filtered ?filtered.map((file, index) => {
           const fullPath = parentPath ? `${parentPath}/${file.name}` : file.name
-          const isExpanded = expandedFolders[fullPath]
 
           return (
             <div key={`${fullPath}-${index}`} className="mb-1 sm:mb-2">
@@ -409,19 +403,19 @@ export default function App() {
               >
                 <div
                   className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0"
-                  onClick={file.type === "folder" ? () => toggleFolder(fullPath) : undefined}
+                  onClick={file.type === "folder"}
                 >
                   {file.type === "folder" ? (
-                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                    <a className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1" href={"/"+file.dirID}>
                       <div className="p-1.5 sm:p-2 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex-shrink-0">
                         <Folder
-                          className={`w-4 h-4 sm:w-5 sm:h-5 transition-all duration-300 ${isExpanded ? "text-blue-600 rotate-0" : "text-amber-600"}`}
+                          className={`w-4 h-4 sm:w-5 sm:h-5 transition-all duration-300 text-amber-600"}`}
                         />
                       </div>
                       <span className="font-semibold text-sm sm:text-base text-slate-800 truncate group-hover:text-blue-700 transition-colors duration-200">
                         {file.name}
                       </span>
-                    </div>
+                    </a>
                   ) : (
                     <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                       <div className="p-1.5 sm:p-2 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200 flex-shrink-0">
@@ -484,14 +478,6 @@ export default function App() {
                             onClick: () => handleCreateFolder(file.dirID),
                           },
                           {
-                            label: "Upload File",
-                            icon: Upload,
-                            onClick: () => {
-                              fileInputRef.current?.click()
-                              setCurrentPath(file.dirID)
-                            },
-                          },
-                          {
                             label: "Delete",
                             icon: Trash2,
                             color: "text-red-600",
@@ -502,15 +488,10 @@ export default function App() {
                   />
                 </div>
               </div>
-
-              {file.type === "folder" && isExpanded && file.children && (
-                <div className="mt-2 sm:mt-3 animate-in slide-in-from-top-2 duration-300">
-                  {renderFiles(file.children, fullPath, depth + 1)}
-                </div>
-              )}
             </div>
           )
-        })}
+        }) : null
+        }
       </div>
     )
   }
@@ -788,80 +769,101 @@ export default function App() {
             </button>
           </div>
         )}
-
         {/* Upload Section */}
-        <section
-          className={`mb-6 sm:mb-8 p-4 sm:p-8 border-2 border-dashed rounded-2xl transition-all duration-300 ${isDragging
-            ? "border-blue-400 bg-gradient-to-br from-blue-50 to-indigo-50 scale-[1.02] shadow-lg"
-            : "border-slate-300 hover:border-slate-400 bg-white/50 backdrop-blur-sm"
-            }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <div className="flex flex-col gap-4 sm:gap-6">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
-              <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
-                <input
-                  type="file"
-                  onChange={handleFileChange}
-                  ref={fileInputRef}
-                  className="hidden"
-                  aria-label="Choose file to upload"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault()
-                      fileInputRef.current?.click()
-                    }
-                  }}
-                  className="flex items-center justify-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 rounded-xl transition-all duration-200 text-slate-700 font-medium shadow-sm hover:shadow-md text-sm sm:text-base touch-manipulation flex-shrink-0"
-                >
-                  <Plus size={16} className="sm:w-[18px] sm:h-[18px]" />
-                  Choose File
-                </button>
-                {selectedFile && (
-                  <div className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-50 rounded-lg border border-blue-200 min-w-0 flex-1">
-                    <FileText size={14} className="sm:w-4 sm:h-4 text-blue-600 flex-shrink-0" />
-                    <span className="text-xs sm:text-sm text-blue-700 font-medium truncate">{selectedFile.name}</span>
+        {
+          dirId ?
+            <section
+              className={`mb-6 sm:mb-8 p-4 sm:p-8 border-2 border-dashed rounded-2xl transition-all duration-300 ${isDragging
+                ? "border-blue-400 bg-gradient-to-br from-blue-50 to-indigo-50 scale-[1.02] shadow-lg"
+                : "border-slate-300 hover:border-slate-400 bg-white/50 backdrop-blur-sm"
+                }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <div className="flex flex-col gap-4 sm:gap-6">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+                  <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                    <input
+                      type="file"
+                      onChange={handleFileChange}
+                      ref={fileInputRef}
+                      className="hidden"
+                      aria-label="Choose file to upload"
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          fileInputRef.current?.click()
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 rounded-xl transition-all duration-200 text-slate-700 font-medium shadow-sm hover:shadow-md text-sm sm:text-base touch-manipulation flex-shrink-0"
+                    >
+                      <Plus size={16} className="sm:w-[18px] sm:h-[18px]" />
+                      Choose File
+                    </button>
+                    {selectedFile && (
+                      <div className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-50 rounded-lg border border-blue-200 min-w-0 flex-1">
+                        <FileText size={14} className="sm:w-4 sm:h-4 text-blue-600 flex-shrink-0" />
+                        <span className="text-xs sm:text-sm text-blue-700 font-medium truncate">{selectedFile.name}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    {/* Add Folder Button */}
+                    <button
+                      onClick={() => handleCreateFolder(dirId)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          handleCreateFolder(dirId)
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl font-medium text-sm sm:text-base touch-manipulation"
+                    >
+                      <FolderPlus size={16} className="sm:w-[18px] sm:h-[18px]" />
+                      <span className="hidden sm:inline">Add Folder</span>
+                      <span className="sm:hidden">Folder</span>
+                    </button>
+
+                    {/* Upload File Button */}
+                    <button
+                      onClick={handleUpload}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          handleUpload()
+                        }
+                      }}
+                      disabled={!selectedFile || uploadProgress > 0}
+                      className="flex items-center justify-center gap-2 sm:gap-3 px-6 sm:px-8 py-2.5 sm:py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-300 disabled:to-slate-400 text-white rounded-xl transition-all duration-200 disabled:cursor-not-allowed shadow-lg hover:shadow-xl disabled:shadow-none font-medium text-sm sm:text-base touch-manipulation"
+                    >
+                      <Upload size={16} className="sm:w-[18px] sm:h-[18px]" />
+                      {uploadProgress > 0 ? "Uploading..." : "Upload File"}
+                    </button>
+                  </div>
+                </div>
+
+                {uploadProgress > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-xs sm:text-sm text-slate-600">
+                      <span className="font-medium">Uploading file...</span>
+                      <span className="font-bold text-blue-600">{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-2 sm:h-3 overflow-hidden shadow-inner">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300 ease-out shadow-sm"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
-
-              <button
-                onClick={handleUpload}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    handleUpload()
-                  }
-                }}
-                disabled={!selectedFile || uploadProgress > 0}
-                className="flex items-center justify-center gap-2 sm:gap-3 px-6 sm:px-8 py-2.5 sm:py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-300 disabled:to-slate-400 text-white rounded-xl transition-all duration-200 disabled:cursor-not-allowed shadow-lg hover:shadow-xl disabled:shadow-none font-medium text-sm sm:text-base touch-manipulation"
-              >
-                <Upload size={16} className="sm:w-[18px] sm:h-[18px]" />
-                {uploadProgress > 0 ? "Uploading..." : "Upload File"}
-              </button>
-            </div>
-
-            {uploadProgress > 0 && (
-              <div className="space-y-3">
-                <div className="flex justify-between text-xs sm:text-sm text-slate-600">
-                  <span className="font-medium">Uploading file...</span>
-                  <span className="font-bold text-blue-600">{uploadProgress}%</span>
-                </div>
-                <div className="w-full bg-slate-200 rounded-full h-2 sm:h-3 overflow-hidden shadow-inner">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-300 ease-out shadow-sm"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
+            </section> : null
+        }
 
         {/* Files Section */}
         <section className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200 p-4 sm:p-8">
@@ -887,7 +889,7 @@ export default function App() {
               <h3 className="text-base sm:text-lg font-semibold text-slate-700 mb-2">Loading your files...</h3>
               <p className="text-slate-500 text-sm sm:text-base">Please wait while we fetch your documents</p>
             </div>
-          ) : files.length === 0 ? (
+          ) : files?.length === 0 ? (
             <div className="text-center py-12 sm:py-16">
               <div className="p-3 sm:p-4 bg-gradient-to-br from-slate-100 to-slate-200 rounded-2xl w-16 h-16 sm:w-20 sm:h-20 mx-auto mb-4 sm:mb-6 flex items-center justify-center">
                 <Folder className="w-8 h-8 sm:w-10 sm:h-10 text-slate-500" />

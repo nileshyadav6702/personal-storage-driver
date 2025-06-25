@@ -6,7 +6,7 @@ import { Eye, EyeOff, Mail, Lock, User, UserPlus, LogIn, AlertCircle, CheckCircl
 
 function Register() {
     const navigate = useNavigate()
-    const url = "https://personal-storage-driver.onrender.com/"
+    const url = "http://localhost:5000/"
     const [form, setForm] = useState({
         name: "",
         email: "",

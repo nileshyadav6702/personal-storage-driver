@@ -1,4 +1,5 @@
 import express from "express";
+import { ObjectId } from "mongodb";
 import { v4 as uuidv4 } from 'uuid';
 
 const userRouter = express.Router();
@@ -26,23 +27,6 @@ const sanitizeInput = (input) => {
 // Async wrapper to catch errors
 const asyncHandler = (fn) => (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
-};
-
-// Database operation wrapper with retry logic
-const safeDBOperation = async (operation, maxRetries = 3) => {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            await operation();
-            return true;
-        } catch (error) {
-            console.error(`Database operation failed (attempt ${attempt}/${maxRetries}):`, error.message);
-            if (attempt === maxRetries) {
-                throw new Error('Database operation failed after multiple attempts');
-            }
-            // Wait before retry (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, attempt * 1000));
-        }
-    }
 };
 
 userRouter.post("/register", asyncHandler(async (req, res) => {
@@ -101,44 +85,43 @@ userRouter.post("/register", asyncHandler(async (req, res) => {
         // Generate UUIDs with validation
         let userId, rootDirId;
         try {
-            userId = uuidv4();
-            rootDirId = uuidv4();
+            userId = new ObjectId();
+            rootDirId = new ObjectId();
         } catch (error) {
             console.error('UUID generation failed:', error);
             return res.status(500).json({
                 msg: "Failed to generate user identifiers"
             });
         }
+        //create the user
+        let newUser = await users.insertOne({
+            _id: new ObjectId(userId),
+            name: sanitizedName,
+            email: sanitizedEmail,
+            password: sanitizedPassword, // In production, hash this!
+            rootDirId,
+        })
+        console.log(newUser)
 
         // Create folder and user objects
         await folders.insertOne({
+            _id: new ObjectId(rootDirId),
             name: "root",
-            dirID: rootDirId,
             parentDir: null,
             content: {
                 files: [],
                 folders: []
             },
-            createdAt: new Date().toISOString(),
-            userId: userId
+            userId: new ObjectId(userId)
         })
 
-        let newUser = await users.insertOne({
-            id: userId,
-            name: sanitizedName,
-            email: sanitizedEmail,
-            password: sanitizedPassword, // In production, hash this!
-            rootDirId,
-            createdAt: new Date().toISOString(),
-            lastLogin: null
-        })
 
         // Set secure cookie
         try {
-            res.cookie("id", userId, {
-                sameSite: process.env.NODE_ENV === 'production' ? "none" : "lax",
+            res.cookie("id", userId.toString(), {
+                // sameSite: "lax",
                 maxAge: 1000 * 60 * 60 * 24, // 24 hours
-                secure: process.env.NODE_ENV === 'production',
+                // secure: false,
                 httpOnly: true
             });
         } catch (error) {
@@ -157,10 +140,10 @@ userRouter.post("/register", asyncHandler(async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Registration error:', error);
+        console.log('Registration error:', error.errInfo.details.schemaRulesNotSatisfied[0].propertiesNotSatisfied);
         return res.status(500).json({
             msg: "Registration failed. Please try again later.",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error: error.message
         });
     }
 }));
@@ -202,36 +185,21 @@ userRouter.post("/login", asyncHandler(async (req, res) => {
                 msg: "Invalid password"
             });
         }
-
-        // Update last login
-        try {
-            await users.updateOne({ id: user.id },{$set: {lastLogin: new Date().toISOString()}})
-
-        } catch (error) {
-            console.error('Failed to update last login:', error);
-            // Don't fail login for this
-        }
-
         // Set secure cookie
-        try {
-            res.cookie("id", user.id, {
-                sameSite: process.env.NODE_ENV === 'production' ? "none" : "lax",
-                maxAge: 1000 * 60 * 60 * 24, // 24 hours
-                secure: process.env.NODE_ENV === 'production',
-                httpOnly: true
-            });
-        } catch (error) {
-            console.error('Failed to set cookie:', error);
-            return res.status(500).json({
-                msg: "Login failed due to session management error"
-            });
-        }
+        // console.log("setting the cookie", isProduction)
+        res.cookie("id", user._id.toString(), {
+            httpOnly: true,
+            // secure: false,
+            // sameSite: isProduction ? "none" : "lax",
+            maxAge: 1000 * 60 * 60 * 24, // 24 hours
+            // path: "/"
+        });
 
         return res.status(200).json({
             msg: "User logged in successfully",
-            id: user.id,
+            id: user._id,
             user: {
-                id: user.id,
+                id: user._id,
                 name: user.name,
                 email: user.email,
                 lastLogin: user.lastLogin,
@@ -243,7 +211,7 @@ userRouter.post("/login", asyncHandler(async (req, res) => {
         console.error('Login error:', error);
         return res.status(500).json({
             msg: "Login failed. Please try again later.",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error:error.message 
         });
     }
 }));
@@ -254,7 +222,6 @@ userRouter.get("/profile", asyncHandler(async (req, res) => {
         let users = await db.collection("users")
         // Check for user ID in cookies
         const { id: userId } = req.cookies || {};
-
         if (!userId) {
             return res.status(401).json({
                 msg: "Authentication required. Please login first."
@@ -262,15 +229,15 @@ userRouter.get("/profile", asyncHandler(async (req, res) => {
         }
 
         // Validate userId format (should be UUID)
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-        if (!uuidRegex.test(userId)) {
-            return res.status(400).json({
-                msg: "Invalid user ID format"
-            });
-        }
+        // const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        // if (!uuidRegex.test(userId)) {
+        //     return res.status(400).json({
+        //         msg: "Invalid user ID format"
+        //     });
+        // }
 
         // Find user safely
-        const user = await users.findOne({ id: userId });
+        const user = await users.findOne({ _id: new ObjectId(userId) });
 
         if (!user) {
             // Clear invalid cookie
@@ -282,7 +249,7 @@ userRouter.get("/profile", asyncHandler(async (req, res) => {
 
         // Return user profile (exclude sensitive data)
         const userProfile = {
-            id: user.id,
+            id: user._id,
             name: user.name,
             email: user.email,
             rootDirId: user.rootDirId,
@@ -299,7 +266,7 @@ userRouter.get("/profile", asyncHandler(async (req, res) => {
         console.error('Profile fetch error:', error);
         return res.status(500).json({
             msg: "Failed to retrieve profile. Please try again later.",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error: error.message
         });
     }
 }));
@@ -310,8 +277,8 @@ userRouter.post("/logout", asyncHandler(async (req, res) => {
         res.cookie('id', '', {
             expires: new Date(0),
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? "none" : "lax"
+            // secure: false,
+            // sameSite: "lax"
         });
 
         return res.status(200).json({
@@ -329,7 +296,7 @@ userRouter.post("/logout", asyncHandler(async (req, res) => {
 
         return res.status(500).json({
             msg: "Logout completed with warnings",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error: error.message 
         });
     }
 }));
@@ -341,7 +308,7 @@ userRouter.use((error, req, res, next) => {
     if (!res.headersSent) {
         return res.status(500).json({
             msg: "An unexpected error occurred",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error: error.message
         });
     }
 

@@ -3,6 +3,8 @@ import express from "express";
 import path from "node:path";
 import { v4 as uuidv4 } from 'uuid';
 import multer from "multer";
+import { ObjectId } from "mongodb";
+import { extension } from "mime-types";
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -14,11 +16,17 @@ const storage = multer.diskStorage({
       let files = db.collection("files")
       let folders = db.collection("folders")
       const { parentdir: parentDir, size } = req.headers;
-      console.log('Size received:', size); // Add this to debug
-      let fileId = uuidv4() + path.extname(file.originalname);
+      console.log('Size received:', size);
+      let fileId = new ObjectId();
+
+      // Validate parentDir exists
+      const parentFolder = await folders.findOne({ _id: new ObjectId(parentDir) });
+      if (!parentFolder) {
+        return cb(new Error("Parent directory not found"));
+      }
 
       // Update in-memory structures
-      await folders.updateOne({ dirID: parentDir },{$push:{"content.files": fileId}})
+      await folders.updateOne({ _id: new ObjectId(parentDir) }, { $push: { "content.files": fileId } })
 
       // Assume size is already in bytes (most common case)
       const sizeInBytes = parseInt(size);
@@ -32,23 +40,41 @@ const storage = multer.diskStorage({
         formattedSize = `${(sizeInBytes / (1024 * 1024 * 1024)).toFixed(2)}gb`;
       }
 
-      console.log('Formatted size:', formattedSize); // Add this to debug
+      console.log('Formatted size:', formattedSize);
 
       await files.insertOne({
-        id: fileId,
+        _id: fileId,
+        extension: path.extname(file.originalname),
         name: file.originalname,
-        dirId: parentDir,
+        dirId: new ObjectId(parentDir),
         size: formattedSize
       })
-      cb(null, fileId)
+      cb(null, fileId.toString() + path.extname(file.originalname)) // Convert ObjectId to string for filename
     }
-    catch(error) {
-      console.log(error)
+    catch (error) {
+      console.log('Multer filename error:', error)
+      cb(error) // Properly handle the error
     }
   }
 })
 
-const upload = multer({ storage: storage })
+// Add file size and type validation
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB limit
+  },
+  fileFilter: function (req, file, cb) {
+    // Add file type validation if needed
+    // const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+    // if (allowedTypes.includes(file.mimetype)) {
+    //   cb(null, true);
+    // } else {
+    //   cb(new Error('Invalid file type'));
+    // }
+    cb(null, true); // Accept all files for now
+  }
+})
 
 const fileRouter = express.Router();
 
@@ -59,24 +85,34 @@ function handleServerError(res, message, error) {
 }
 
 // Recursive folder deletion
-async function removeFilesAndDirectoryFromFolder( folderId, files, folders ) {
+async function removeFilesAndDirectoryFromFolder(folderId, files, folders) {
   try {
-    const folderToBeRemoved =await  folders.findOne({ dirID: folderId });
+    const folderToBeRemoved = await folders.findOne({ _id: new ObjectId(folderId) });
     if (!folderToBeRemoved) {
       throw new Error(`Folder not found: ${folderId}`);
     }
 
     // Delete all files in the folder
     const fileIds = folderToBeRemoved.content?.files || [];
-    await files.deleteMany({ id:{ $in: fileIds }})
+    if (fileIds.length > 0) {
+      await files.deleteMany({ _id: { $in: fileIds.map(id => new ObjectId(id)) } })
+
+      // Delete physical files
+      for (const fileId of fileIds) {
+        try {
+          await fs.rm(path.resolve('./storage', fileId.toString()));
+        } catch (err) {
+          console.error(`Error deleting physical file ${fileId}:`, err.message);
+        }
+      }
+    }
 
     // Remove this folder's ID from its parent folder (if not root)
     const parentFolderId = folderToBeRemoved.parentDir !== "null" ? folderToBeRemoved.parentDir : null;
     if (parentFolderId) {
-      // const parentFolder = folders.find(f => f.dirID === parentFolderId);
-      const parentFolder = await  folders.findOne({ dirID: parentFolderId });
+      const parentFolder = await folders.findOne({ _id: new ObjectId(parentFolderId) });
       if (parentFolder) {
-        await folders.updateOne({ dirID: parentFolder.dirID },{$pull:{"content.folders": folderToBeRemoved.dirID}})
+        await folders.updateOne({ _id: parentFolder._id }, { $pull: { "content.folders": folderToBeRemoved._id } })
       }
     }
 
@@ -86,57 +122,70 @@ async function removeFilesAndDirectoryFromFolder( folderId, files, folders ) {
       await removeFilesAndDirectoryFromFolder(subFolderId, files, folders);
     }
 
-    // Remove the current folder itself
-    await folders.deleteOne({ dirID: folderToBeRemoved.dirID})
+    // Remove the current folder itself - FIX: use _id instead of dirID
+    await folders.deleteOne({ _id: folderToBeRemoved._id })
   } catch (error) {
     console.error("Error deleting folder:", error.message);
+    throw error; // Re-throw to handle in calling function
   }
 }
 
-
 fileRouter.param("filename", (req, res, next) => {
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  let { filename } = req.params;
-  filename = filename.split('.')[0]
-  if(!uuidPattern.test(filename)) {
-    return res.status(401).json({msg:"the id is not valid"})
+  const { filename } = req.params;
+  const cleanFilename = filename.split('.')[0];
+
+  // Validate ObjectId format
+  if (!ObjectId.isValid(cleanFilename)) {
+    return res.status(400).json({ msg: "Invalid file ID format" })
   }
-  console.log(req.method, filename)
+
+  console.log(req.method, cleanFilename)
   next()
 })
+
 // GET file endpoint
 fileRouter.get('/:filename', async (req, res) => {
   try {
     let { filename } = req.params;
     let db = req.db;
-    let folders = db.collection("folders")
     let files = db.collection("files")
-    filename = filename.replaceAll('%20', ' ');
-    const filePath = path.resolve('./storage', filename);
-    const query = req.query;
-    let file = await files.findOne({ id: filename })
-    await fs.stat(filePath); // Ensure file exists
 
+    const query = req.query;
+    
+    // FIX: Use _id with ObjectId instead of id
+    let file = await files.findOne({ _id: new ObjectId(filename) })
+    if (!file) {
+      return res.status(404).json({ msg: "File not found in database" });
+    }
+    filename += file?.extension
+    let filePath = path.resolve('./storage', filename);
+
+    console.log(filePath)
+
+    // Check if physical file exists
+    try {
+      await fs.stat(filePath);
+    } catch (statError) {
+      return res.status(404).json({ msg: "Physical file not found" });
+    }
+    
     if (query?.download === 'true') {
-      return res.download(filePath, file.name ,(err) => {
-        res.status(404).end('File not found');
-      })
+      res.download(filePath, file.name)
     } else {
-      return res.sendFile(filePath, (err) => {
-        if (err) {
-          console.error('SendFile error:', err.message);
-          res.status(404).end('File not found');
-        }
-      });
+      res.sendFile(filePath);
     }
   } catch (error) {
     return handleServerError(res, "Error retrieving the file", error);
   }
 });
+
 // Upload file
-fileRouter.post('/upload' ,upload.single('file'),async (req, res) => {
+fileRouter.post('/upload', upload.single('file'), async (req, res) => {
   try {
-    return res.status(200).json({msg: "file uploaded successfully!"})
+    if (!req.file) {
+      return res.status(400).json({ msg: "No file uploaded" });
+    }
+    return res.status(200).json({ msg: "File uploaded successfully!", fileId: req.file.filename })
   } catch (error) {
     return handleServerError(res, "Error uploading file", error);
   }
@@ -150,28 +199,40 @@ fileRouter.delete('/delete-file', async (req, res) => {
     let folders = db.collection("folders")
     let files = db.collection("files")
     const { fileid: fileId, dirid: dirId } = req.headers;
-    if(!fileId && !dirId) throw new Error("Name of file or directory in not found!")
+
+    if (!fileId && !dirId) throw new Error("File ID or directory ID is required!")
 
     if (fileId && fileId !== 'null') {
-      let file = await files.findOne({ id: fileId })
-      await files.deleteOne({ id: fileId })
-      await folders.updateOne({ dirID: file.dirId }, {
+      // FIX: Convert string to ObjectId
+      const fileObjectId = new ObjectId(fileId);
+      let file = await files.findOne({ _id: fileObjectId })
+
+      if (!file) {
+        return res.status(404).json({ msg: "File not found" });
+      }
+
+      await files.deleteOne({ _id: fileObjectId })
+      await folders.updateOne({ _id: file.dirId }, {
         $pull: {
-          "content.files": fileId
+          "content.files": fileObjectId
         }
       })
 
+      // Delete physical file
       await fs.rm(path.resolve('./storage', fileId)).catch(err => {
         console.error("File deletion error:", err.message);
       });
     }
 
     if (dirId && dirId !== 'null') {
-      let dir = await folders.findOne({ dirId, userId: id })
-      if(!dir) {
-        return res.status(404).json({success: false, message: "Directory does not found from your folders!"})
+      const dirObjectId = new ObjectId(dirId);
+      let dir = await folders.findOne({ _id: dirObjectId, userId: new ObjectId(id) })
+
+      if (!dir) {
+        return res.status(404).json({ success: false, message: "Directory not found in your folders!" })
       }
-      await removeFilesAndDirectoryFromFolder(dirId, files, folders);
+
+      await removeFilesAndDirectoryFromFolder(dirObjectId, files, folders);
     }
 
     return res.json({ msg: 'File/folder deleted successfully' });
@@ -187,33 +248,31 @@ fileRouter.put('/rename-file', async (req, res) => {
     let db = req.db;
     let folders = db.collection("folders")
     let files = db.collection("files")
-    // console.log(filename, fileid, dirname, dirid)
-    // return
-    // if((!filename && !fileid) || (!dirname && !dirid)) throw new Error("Something in missing in the headers!")
+
     if (filename !== "null" && fileid !== "null") {
-      await files.updateOne({id: fileid }, {
+      // FIX: Convert string to ObjectId
+      const result = await files.updateOne({ _id: new ObjectId(fileid) }, {
         $set: {
           name: filename
         }
       })
-      // const file = files.find(f => f.id === fileid);
-      // if (!file) return res.status(404).json({ msg: "File not found" });
 
-      // file.name = filename;
-      // await writeFiles(files);
+      if (result.matchedCount === 0) {
+        return res.status(404).json({ msg: "File not found" });
+      }
     }
 
     if (dirname !== "null" && dirid !== "null") {
-      await folders.updateOne({ dirID: dirid }, {
+      // FIX: Convert string to ObjectId
+      const result = await folders.updateOne({ _id: new ObjectId(dirid) }, {
         $set: {
           name: dirname
         }
       })
-      // const folder = folders.find(f => f.dirID === dirid);
-      // if (!folder) return res.status(404).json({ msg: "Folder not found" });
 
-      // folder.name = dirname;
-      // await writeFolders(folders);
+      if (result.matchedCount === 0) {
+        return res.status(404).json({ msg: "Folder not found" });
+      }
     }
 
     return res.json({ msg: 'Renamed successfully' });

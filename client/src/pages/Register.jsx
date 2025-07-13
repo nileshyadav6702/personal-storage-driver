@@ -82,7 +82,7 @@ function Register() {
             if (data.msg === "user Created successfully") {
                 setSuccess("Registration successful!")
                 // localStorage.setItem("id", data.id)
-                setTimeout(() => navigate("/"), 1500)
+                navigate("/")
             } else {
                 setError(data.msg || "Error occurred in creating the user")
             }

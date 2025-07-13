@@ -4,7 +4,7 @@ import directoryRouter from "./routes/directoryRoutes.js"
 import fileRouter from "./routes/fileRoutes.js"
 import userRouter from "./routes/userRoutes.js"
 import cookieParser from "cookie-parser"
-import connectDB from "./connectDB.js"
+import {connectDB} from "./config/connectDB.js"
 import checkAuth from "./middleware/authMiddleware.js"
 const app = express()
 

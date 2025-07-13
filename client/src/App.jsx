@@ -77,7 +77,7 @@ export default function App() {
       setIsLoading(false)
     }
   }, [url])
-
+  
   const fetchUserProfile = useCallback(async () => {
     try {
       const response = await fetch(`${url}users/profile`, {

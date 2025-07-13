@@ -1,53 +1,63 @@
 import express from "express"
+import { ObjectId } from "mongodb";
 const directoryRouter = express.Router();
 import { v4 as uuidv4 } from 'uuid';
 
 async function getFolderInfo(id, files, folders) {
-  let Mainfolders = await  folders.find({ parentDir: id}).toArray()
-  let mainFiles =await  folders.findOne({dirID: id })
-  if (mainFiles?.content?.files.length == 0) {
-    return []
-  }
-  mainFiles = mainFiles?.content?.files
-  let secFiles = []
-  for(let fileId of mainFiles) {
-    let fileinfo = await files.findOne({ id: fileId })
-    secFiles.push(
-      {
-        name: fileinfo.name,
-        type: 'file',
-        id: fileinfo.id,
-        size: fileinfo.size
+  try {
+    let Mainfolders = await folders.find({ parentDir: new ObjectId(id) }).toArray()
+    let mainFiles = await folders.findOne({ _id: new ObjectId(id) })
+    let secFiles = []
+    console.log(Mainfolders)
+    console.log(mainFiles)
+    if (mainFiles?.content?.files.length != 0) {
+      mainFiles = mainFiles?.content?.files
+      for (let fileId of mainFiles) {
+        let fileinfo = await files.findOne({ _id: fileId })
+        secFiles.push(
+          {
+            name: fileinfo.name,
+            type: 'file',
+            id: fileinfo._id,
+            size: fileinfo.size
+          }
+        )
       }
-    )
-  }
-  Mainfolders = Mainfolders.map(el => {
-    return {
-      name: el.name,
-      type: "folder",
-      dirID: el.dirID
     }
-  })
-  return [...Mainfolders, ...secFiles]
+    let fol = Mainfolders.map((el) => {
+      return {
+        name: el.name,
+        type: "folder",
+        dirID: el._id
+      }
+    })
+    console.log('modified folders', fol)
+    return [...fol, ...secFiles]
+  }
+  catch(error) {
+    console.log(error)
+  }
 }
 
 //create a folder
 directoryRouter.post('/create', async (req, res) => {
   try {
     const { parentDirId, foldername } = req.body;
-    let folderId = uuidv4();
     let db = req.db;
+    let folderId = new ObjectId();
     let folders = db.collection("folders")
-    await folders.findOneAndUpdate({ _id: parentDirId }, {
+    let { id: userId} = req.cookies;
+    await folders.findOneAndUpdate({ _id: new ObjectId(parentDirId) }, {
       $push: { "content.folders": folderId }
     })
     if (!foldername) {
       throw new Error('Error occured in creating a folder')
     }
     await folders.insertOne({
+      _id: folderId,
       name: foldername,
-      dirID: folderId,
-      parentDir: parentDirId,
+      parentDir: new ObjectId(parentDirId),
+      userId: new ObjectId(userId),
       content: {
         "files": [],
         "folders": []
@@ -75,13 +85,14 @@ directoryRouter.get('/:dirId', async (req, res) => {
         msg: "id not found"
       })
     }
-    let user = await users.findOne({ id: userId })
+    let user = await users.findOne({ _id: new ObjectId(userId) })
     if (dirId == 'root') {
-      const mainFolder = await  folders.findOne({ dirID: user.rootDirId })
-      return res.status(200).json({ success: true, message: "Successfully completed request", data: [{ name: mainFolder.name, dirID: mainFolder.dirID, type: "folder" }] });
+      const mainFolder = await  folders.findOne({ _id: user.rootDirId })
+      return res.status(200).json({ success: true, message: "Successfully completed request", data: [{ name: mainFolder.name, dirID: mainFolder._id, type: "folder" }] });
     }
     else {
       let data = await getFolderInfo(dirId, files, folders)
+      console.log('Data ',data)
       return res.status(200).json({ success: true, message: "Successfully completed request", data });
     }
   } catch (error) {
